@@ -550,6 +550,10 @@ static int processCompressOptions(char *opt)
         processZIPOptions(opt);
         defcompression = COMPRESSION_WEBP;
     }
+    else if (strneq(opt, "htj2k", 5))
+    {
+        defcompression = COMPRESSION_HTJ2K;
+    }
     else if (strneq(opt, "jbig", 4))
     {
         defcompression = COMPRESSION_JBIG;
@@ -1099,6 +1103,10 @@ static int tiffcp(TIFF *in, TIFF *out)
                     TIFFSetField(out, TIFFTAG_WEBP_LEVEL, preset);
                 }
             }
+            break;
+        case COMPRESSION_HTJ2K:
+            /* No codec-specific preset in tiffcp; use library defaults
+             * (lossless). */
             break;
         case COMPRESSION_CCITTFAX3:
         case COMPRESSION_CCITTFAX4:

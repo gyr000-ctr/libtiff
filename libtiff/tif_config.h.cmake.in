@@ -127,6 +127,9 @@
 /* Support WEBP compression */
 #cmakedefine WEBP_SUPPORT 1
 
+/* Support HTJ2K (High Throughput JPEG 2000, OpenJPH) compression */
+#cmakedefine HTJ2K_SUPPORT 1
+
 /* Support ZSTD compression */
 #cmakedefine ZSTD_SUPPORT 1
 

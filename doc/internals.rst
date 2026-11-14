@@ -93,6 +93,7 @@ Other codec libraries supported by LibTIFF are:
 * | ZSTD:  info at `<https://facebook.github.io/zstd/>`_
   | and can be retrieved from `<https://github.com/facebook/zstd>`_
 * WebP:  `<https://developers.google.com/speed/webp>`_
+* OpenJPH (High Throughput JPEG 2000, HTJ2K): `<https://github.com/aous72/OpenJPH>`_
 
 By default :file:`tiffconf.h` defines
 :c:macro:`COLORIMETRY_SUPPORT`,
@@ -159,6 +160,11 @@ and
       - WebP raster graphic compression support
         (compression 50001 - not registered in Adobe-maintained registry)
         (requires webp library)
+
+    * - :c:macro:`HTJ2K_SUPPORT`
+      - High Throughput JPEG 2000 (HTJ2K, ISO/IEC 15444-15) compression
+        (compression 50003 - not registered in Adobe-maintained registry)
+        (requires OpenJPH library and a C++ compiler)
 
     * - :c:macro:`PIXARLOG_SUPPORT`
       - Pixar's compression scheme for high-resolution color images

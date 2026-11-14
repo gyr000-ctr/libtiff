@@ -145,6 +145,9 @@ include(WebPCodec)
 # Option for C++ libtiffxx library
 include(CXXLibrary)
 
+# Check for HTJ2K (OpenJPH) codec; requires C++ support
+include(HTJ2KCodec)
+
 # Checks for OpenGL support
 include(OpenGLChecks)
 # OpenGL is unavailable on non-macOS Apple platforms (iOS, tvOS, watchOS, visionOS)
@@ -253,6 +256,11 @@ endif()
 message(STATUS "  LZMA2 support:                      Requested:${lzma} Availability:${liblzma_FOUND} Support:${LZMA_SUPPORT}")
 message(STATUS "  ZSTD support:                       Requested:${zstd} Availability:${ZSTD_USABLE} Support:${ZSTD_SUPPORT}")
 message(STATUS "  WEBP support:                       Requested:${webp} Availability:${WebP_FOUND} Support:${WEBP_SUPPORT}")
+if(CXX_SUPPORT)
+  message(STATUS "  HTJ2K (OpenJPH) support:            Requested:${htj2k} Availability:${OpenJPH_FOUND} Support:${HTJ2K_SUPPORT}")
+else()
+  message(STATUS "  HTJ2K (OpenJPH) support:            Requested:${htj2k} Availability:${OpenJPH_FOUND} Support:${HTJ2K_SUPPORT} (Depends on C++ Support)")
+endif()
 message(STATUS "")
 message(STATUS "  C++ support:                        ${tiff-cxx} (requested) ${CXX_SUPPORT} (availability)")
 message(STATUS "")

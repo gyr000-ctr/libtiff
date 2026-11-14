@@ -79,6 +79,9 @@ static int NotConfigured(TIFF *, int);
 #ifndef WEBP_SUPPORT
 #define TIFFInitWebP NotConfigured
 #endif
+#ifndef HTJ2K_SUPPORT
+#define TIFFInitHTJ2K NotConfigured
+#endif
 
 /*
  * Compression schemes statically built into the library.
@@ -104,6 +107,7 @@ const TIFFCodec _TIFFBuiltinCODECS[] = {
     {"LZMA", COMPRESSION_LZMA, TIFFInitLZMA},
     {"ZSTD", COMPRESSION_ZSTD, TIFFInitZSTD},
     {"WEBP", COMPRESSION_WEBP, TIFFInitWebP},
+    {"HTJ2K", COMPRESSION_HTJ2K, TIFFInitHTJ2K},
     {"LERC", COMPRESSION_LERC, TIFFInitLERC},
     {NULL, 0, NULL}};
 

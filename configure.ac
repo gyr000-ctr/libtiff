@@ -962,6 +962,80 @@ fi
 AM_CONDITIONAL(HAVE_CXX, test "$HAVE_CXX" = "yes")
 
 dnl ---------------------------------------------------------------------------
+dnl Check for OpenJPH (HTJ2K / High Throughput JPEG 2000).
+dnl The codec is implemented in C++, so a C++ compiler is required.
+dnl ---------------------------------------------------------------------------
+
+HAVE_HTJ2K=no
+
+AC_ARG_ENABLE(htj2k,
+	      AS_HELP_STRING([--disable-htj2k],
+			     [disable OpenJPH usage (required for HTJ2K compression, enabled by default)]),,)
+AC_ARG_WITH(openjph-include-dir,
+	    AS_HELP_STRING([--with-openjph-include-dir=DIR],
+			   [location of OpenJPH headers]),,)
+AC_ARG_WITH(openjph-lib-dir,
+	    AS_HELP_STRING([--with-openjph-lib-dir=DIR],
+			   [location of OpenJPH library binary]),,)
+
+if test "x$enable_htj2k" != "xno" -a "$HAVE_CXX" = "yes" ; then
+
+  if test "x$with_openjph_lib_dir" != "x" ; then
+    LDFLAGS="-L$with_openjph_lib_dir $LDFLAGS"
+  fi
+
+  if test "x$with_openjph_include_dir" != "x" ; then
+    CPPFLAGS="-I$with_openjph_include_dir $CPPFLAGS"
+  fi
+
+  dnl OpenJPH is a C++ library; both checks must use the C++ compiler.
+  AC_LANG_PUSH([C++])
+  AC_CHECK_HEADER(openjph/ojph_codestream.h, [openjph_h=yes], [openjph_h=no])
+  if test "$openjph_h" = "yes" ; then
+    AC_MSG_CHECKING([for OpenJPH library])
+    save_LIBS="$LIBS"
+    LIBS="-lopenjph $LIBS"
+    AC_LINK_IFELSE(
+      [AC_LANG_PROGRAM(
+         [[#include <openjph/ojph_codestream.h>]],
+         [[ojph::codestream cs; (void)cs;]])],
+      [openjph_lib=yes
+       AC_MSG_RESULT([yes])],
+      [openjph_lib=no
+       LIBS="$save_LIBS"
+       AC_MSG_RESULT([no])])
+  fi
+  AC_LANG_POP([C++])
+
+  if test "$openjph_h" = "no" -a "x$with_openjph_include_dir" != "x" ; then
+    AC_MSG_ERROR([OpenJPH headers not found at $with_openjph_include_dir])
+  fi
+  if test "$openjph_lib" = "no" -a "x$with_openjph_lib_dir" != "x"; then
+    AC_MSG_ERROR([OpenJPH library not found at $with_openjph_lib_dir])
+  fi
+
+  if test "$openjph_lib" = "yes" -a "$openjph_h" = "yes" ; then
+    HAVE_HTJ2K=yes
+  fi
+
+fi
+
+if test "$HAVE_HTJ2K" = "yes" ; then
+  AC_DEFINE(HTJ2K_SUPPORT,1,[Support HTJ2K (High Throughput JPEG 2000) compression])
+  dnl The codec is C++; static consumers of libtiff.a need the C++ runtime.
+  LIBS="-lopenjph -lstdc++ $LIBS"
+  tiff_libs_private="-lopenjph ${tiff_libs_private}"
+  tiff_requires_private="openjph ${tiff_requires_private}"
+
+  if test "$HAVE_RPATH" = "yes" -a "x$with_openjph_lib_dir" != "x" ; then
+    LIBDIR="-R $with_openjph_lib_dir $LIBDIR"
+  fi
+
+fi
+
+AM_CONDITIONAL(HAVE_HTJ2K, test "$HAVE_HTJ2K" = 'yes')
+
+dnl ---------------------------------------------------------------------------
 dnl Check for OpenGL and GLUT.
 dnl ---------------------------------------------------------------------------
 

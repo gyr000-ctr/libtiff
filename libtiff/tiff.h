@@ -216,6 +216,7 @@ typedef enum
 #define COMPRESSION_ZSTD 50000             /* ZSTD: WARNING not registered in Adobe-maintained registry */
 #define COMPRESSION_WEBP 50001             /* WEBP: WARNING not registered in Adobe-maintained registry */
 #define COMPRESSION_JXL 50002              /* JPEGXL: WARNING not registered in Adobe-maintained registry */
+#define COMPRESSION_HTJ2K 50003            /* High Throughput JPEG 2000 (ISO/IEC 15444-15), via OpenJPH: WARNING not registered in Adobe-maintained registry */
 #define COMPRESSION_JXL_DNG_1_7 52546      /* JPEGXL from DNG 1.7 specification */
 #define TIFFTAG_PHOTOMETRIC 262            /* photometric interpretation */
 #define PHOTOMETRIC_MINISWHITE 0           /* min value is white */
@@ -763,6 +764,9 @@ typedef enum
 #define TIFFTAG_WEBP_LEVEL 65568       /* WebP compression level */
 #define TIFFTAG_WEBP_LOSSLESS 65569    /* WebP lossless/lossy */
 #define TIFFTAG_WEBP_LOSSLESS_EXACT 65571  /* WebP lossless exact mode. Set-only mode. Default is 1. Can be set to 0 to increase compression rate, but R,G,B in areas where alpha = 0 will not be preserved */
+#define TIFFTAG_HTJ2K_LOSSLESS 65572  /* HTJ2K reversible (lossless) vs irreversible (lossy) */
+#define TIFFTAG_HTJ2K_NUMDECOMP 65573 /* HTJ2K number of wavelet decomposition levels */
+#define TIFFTAG_HTJ2K_QSTEP 65574     /* HTJ2K lossy quantization step size */
 #define TIFFTAG_DEFLATE_SUBCODEC 65570 /* ZIP codec: to get/set the sub-codec to use. Will default to libdeflate when available */
 #define DEFLATE_SUBCODEC_ZLIB 0
 #define DEFLATE_SUBCODEC_LIBDEFLATE 1

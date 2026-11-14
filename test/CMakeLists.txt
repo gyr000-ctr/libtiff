@@ -243,6 +243,14 @@ foreach(target ${simple_tests})
   tiff_target_compile_as_cxx(${target})
 endforeach()
 
+if(HTJ2K_SUPPORT)
+  add_executable(test_htj2k ../placeholder.h)
+  target_sources(test_htj2k PRIVATE test_htj2k.c)
+  set_target_properties(test_htj2k PROPERTIES LINKER_LANGUAGE CXX)
+  target_link_libraries(test_htj2k PRIVATE tiff tiff_port)
+  list(APPEND simple_tests test_htj2k)
+endif()
+
 if(WEBP_SUPPORT AND EMSCRIPTEN)
   # Emscripten is pretty finnicky about linker flags.
   # It needs --shared-memory if and only if atomics or bulk-memory is used.

@@ -101,6 +101,10 @@ libtiff_la_SOURCES = \
 	tif_zip.c \
 	tif_zstd.c
 
+if HAVE_HTJ2K
+libtiff_la_SOURCES += tif_htj2k.cxx
+endif
+
 libtiffxx_la_SOURCES = \
 	tif_stream.cxx
 

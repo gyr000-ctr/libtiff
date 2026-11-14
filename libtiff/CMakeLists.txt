@@ -98,6 +98,14 @@ target_sources(tiff PRIVATE
         tif_zip.c
         tif_zstd.c)
 
+if(HTJ2K_SUPPORT)
+  target_sources(tiff PRIVATE tif_htj2k.cxx)
+  set_source_files_properties(tif_htj2k.cxx PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED ON
+    SKIP_UNITY_BUILD_INCLUSION ON)
+endif()
+
 if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
   set_property(SOURCE tif_jpeg.c tif_jpeg12.c PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 endif ()
@@ -181,6 +189,13 @@ endif()
 if(WEBP_SUPPORT)
   target_link_libraries(tiff PRIVATE WebP::webp)
   string(APPEND tiff_requires_private " libwebp")
+endif()
+if(HTJ2K_SUPPORT)
+  target_link_libraries(tiff PRIVATE OpenJPH::OpenJPH)
+  list(APPEND tiff_libs_private_list "${OpenJPH_LIBRARY}")
+  # The HTJ2K codec is C++.  For a static tiff, CMake propagates this
+  # target's C++ link dependencies (including the C++ runtime) to any
+  # executable linking the static archive, so plain-C tests still build.
 endif()
 if(CMath_LIBRARY)
   target_link_libraries(tiff PRIVATE ${CMath_LIBRARIES})
