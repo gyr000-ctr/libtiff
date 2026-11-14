@@ -93,6 +93,7 @@ Other codec libraries supported by LibTIFF are:
 * | ZSTD:  info at `<https://facebook.github.io/zstd/>`_
   | and can be retrieved from `<https://github.com/facebook/zstd>`_
 * WebP:  `<https://developers.google.com/speed/webp>`_
+* libavif (AVIF): `<https://github.com/AOMediaCodec/libavif>`_
 
 By default :file:`tiffconf.h` defines
 :c:macro:`COLORIMETRY_SUPPORT`,
@@ -159,6 +160,11 @@ and
       - WebP raster graphic compression support
         (compression 50001 - not registered in Adobe-maintained registry)
         (requires webp library)
+
+    * - :c:macro:`AVIF_SUPPORT`
+      - AVIF (AV1 Image File Format) raster graphic compression support
+        (compression 50003 - not registered in Adobe-maintained registry)
+        (requires libavif library)
 
     * - :c:macro:`PIXARLOG_SUPPORT`
       - Pixar's compression scheme for high-resolution color images

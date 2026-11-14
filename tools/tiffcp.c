@@ -95,6 +95,13 @@ static uint16_t defpredictor = (uint16_t)-1;
 static int defpreset = -1;
 static int subcodec = -1;
 
+/* AVIF encoder options (-c avif[:opts]). -1 means "leave the codec
+ * default untouched". */
+static int avif_quality = -1;
+static int avif_speed = -1;
+static int avif_subsampling = -1;
+static int avif_lossless = -1;
+
 static int tiffcp(TIFF *, TIFF *);
 static int processCompressOptions(char *);
 static void usage(int code);
@@ -461,12 +468,40 @@ static void processLERCOptions(char *cp)
     }
 }
 
+/*
+ * Parse "-c avif[:opts]". Supported options:
+ *   q#   color quality 0..100 (100 implies lossless)
+ *   l    select lossless mode
+ *   s#   encoder speed 0..10
+ *   c#   chroma subsampling: 0=4:4:4, 1=4:2:2, 2=4:2:0
+ */
+static void processAVIFOptions(char *cp)
+{
+    char *colon = strchr(cp, ':');
+    if (colon == NULL)
+        return;
+    cp = colon;
+    do
+    {
+        cp++;
+        if (*cp == 'q')
+            avif_quality = atoi(++cp);
+        else if (*cp == 'l')
+            avif_lossless = 1;
+        else if (*cp == 's')
+            avif_speed = atoi(++cp);
+        else if (*cp == 'c')
+            avif_subsampling = atoi(++cp);
+        else
+            usage(EXIT_FAILURE);
+    } while ((cp = strchr(cp, ':')));
+}
+
 static void processG3Options(char *cp)
 {
     if ((cp = strchr(cp, ':')))
     {
-        if (defg3opts == (uint32_t)-1)
-            defg3opts = 0;
+        if (defg3opts == (uint32_t)-1)            defg3opts = 0;
         do
         {
             cp++;
@@ -549,6 +584,11 @@ static int processCompressOptions(char *opt)
     {
         processZIPOptions(opt);
         defcompression = COMPRESSION_WEBP;
+    }
+    else if (strneq(opt, "avif", 4))
+    {
+        processAVIFOptions(opt);
+        defcompression = COMPRESSION_AVIF;
     }
     else if (strneq(opt, "jbig", 4))
     {
@@ -645,6 +685,13 @@ static const char usage_info[] =
     /* "    WEBP options:", */
     "    #            set predictor value\n"
     "    p#           set compression level (preset)\n"
+#endif
+#ifdef AVIF_SUPPORT
+    " -c avif[:opts]  compress output with AVIF (AV1) encoding\n"
+    "    q#           set color quality 0-100 (100 = lossless)\n"
+    "    l            select lossless mode\n"
+    "    s#           encoder speed 0 (slowest) - 10 (fastest)\n"
+    "    c#           chroma subsampling: 0=4:4:4, 1=4:2:2, 2=4:2:0\n"
 #endif
 #ifdef JPEG_SUPPORT
     " -c jpeg[:opts]  compress output with JPEG encoding\n"
@@ -865,7 +912,13 @@ static int tiffcp(TIFF *in, TIFF *out)
     else
         CopyField(TIFFTAG_COMPRESSION, compression);
     if (!TIFFIsCODECConfigured(compression))
+    {
+        if (compression == COMPRESSION_AVIF)
+            TIFFError(TIFFFileName(out),
+                      "AVIF compression was requested, but libtiff was "
+                      "built without libavif support");
         return FALSE;
+    }
     TIFFGetFieldDefaulted(in, TIFFTAG_COMPRESSION, &input_compression);
     if (!TIFFIsCODECConfigured(input_compression))
         return FALSE;
@@ -998,13 +1051,25 @@ static int tiffcp(TIFF *in, TIFF *out)
              * always RGB, not YCbCr subsampled. */
             TIFFSetField(out, TIFFTAG_JPEGCOLORMODE, JPEGCOLORMODE_RGB);
             break;
+        case COMPRESSION_AVIF:
+#ifdef AVIF_SUPPORT
+            if (avif_lossless == 1 || avif_quality == 100)
+                TIFFSetField(out, TIFFTAG_AVIF_LOSSLESS, 1);
+            else if (avif_quality >= 0)
+                TIFFSetField(out, TIFFTAG_AVIF_QUALITY, avif_quality);
+            if (avif_speed >= 0)
+                TIFFSetField(out, TIFFTAG_AVIF_SPEED, avif_speed);
+            if (avif_subsampling >= 0)
+                TIFFSetField(out, TIFFTAG_AVIF_SUBSAMPLING,
+                             avif_subsampling);
+#endif
+            break;
         case COMPRESSION_JBIG:
             CopyTag(TIFFTAG_FAXRECVPARAMS, 1, TIFF_LONG);
             CopyTag(TIFFTAG_FAXRECVTIME, 1, TIFF_LONG);
             CopyTag(TIFFTAG_FAXSUBADDRESS, 1, TIFF_ASCII);
             CopyTag(TIFFTAG_FAXDCS, 1, TIFF_ASCII);
-            break;
-        case COMPRESSION_LERC:
+            break;        case COMPRESSION_LERC:
             if (max_z_error > 0)
             {
                 if (TIFFSetField(out, TIFFTAG_LERC_MAXZERROR, max_z_error) != 1)

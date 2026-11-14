@@ -911,6 +911,61 @@ fi
 AM_CONDITIONAL(HAVE_WEBP, test "$HAVE_WEBP" = 'yes')
 
 dnl ---------------------------------------------------------------------------
+dnl Check for libavif.
+dnl ---------------------------------------------------------------------------
+
+HAVE_AVIF=no
+
+AC_ARG_ENABLE(avif,
+	      AS_HELP_STRING([--disable-avif],
+			     [disable libavif usage (required for AVIF compression, enabled by default)]),,)
+AC_ARG_WITH(avif-include-dir,
+	    AS_HELP_STRING([--with-avif-include-dir=DIR],
+			   [location of libavif headers]),,)
+AC_ARG_WITH(avif-lib-dir,
+	    AS_HELP_STRING([--with-avif-lib-dir=DIR],
+			   [location of libavif library binary]),,)
+
+if test "x$enable_avif" != "xno" ; then
+
+  if test "x$with_avif_lib_dir" != "x" ; then
+    LDFLAGS="-L$with_avif_lib_dir $LDFLAGS"
+  fi
+
+  AC_CHECK_LIB(avif, avifEncoderWrite, [avif_lib=yes], [avif_lib=no],)
+  if test "$avif_lib" = "no" -a "x$with_avif_lib_dir" != "x"; then
+    AC_MSG_ERROR([avif library not found at $with_avif_lib_dir])
+  fi
+
+  if test "x$with_avif_include_dir" != "x" ; then
+    CPPFLAGS="-I$with_avif_include_dir $CPPFLAGS"
+  fi
+  AC_CHECK_HEADER(avif/avif.h, [avif_h=yes], [avif_h=no])
+  if test "$avif_h" = "no" -a "x$with_avif_include_dir" != "x" ; then
+    AC_MSG_ERROR([libavif headers not found at $with_avif_include_dir])
+  fi
+
+  if test "$avif_lib" = "yes" -a "$avif_h" = "yes" ; then
+    HAVE_AVIF=yes
+  fi
+
+fi
+
+if test "$HAVE_AVIF" = "yes" ; then
+  AC_DEFINE(AVIF_SUPPORT,1,[Support AVIF compression])
+  LIBS="-lavif $LIBS"
+  tiff_libs_private="-lavif ${tiff_libs_private}"
+  tiff_requires_private="libavif ${tiff_requires_private}"
+
+  if test "$HAVE_RPATH" = "yes" -a "x$with_avif_lib_dir" != "x" ; then
+    LIBDIR="-R $with_avif_lib_dir $LIBDIR"
+  fi
+
+fi
+
+AM_CONDITIONAL(HAVE_AVIF, test "$HAVE_AVIF" = 'yes')
+
+dnl ---------------------------------------------------------------------------
 dnl Should 8/12 bit jpeg mode be enabled?
 dnl This should not be used starting with libjpeg-turbo >= 3.0 that has
 dnl built-in support for dual mode.

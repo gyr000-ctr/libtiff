@@ -552,6 +552,9 @@ extern "C"
 #ifdef WEBP_SUPPORT
     extern int TIFFInitWebP(TIFF *, int);
 #endif
+#ifdef AVIF_SUPPORT
+    extern int TIFFInitAVIF(TIFF *, int);
+#endif
     extern const TIFFCodec _TIFFBuiltinCODECS[];
     extern void TIFFCIELab16ToXYZ(TIFFCIELabToRGB *, uint32_t l, int32_t a,
                                   int32_t b, float *, float *, float *);

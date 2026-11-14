@@ -127,6 +127,9 @@
 /* Support WEBP compression */
 #cmakedefine WEBP_SUPPORT 1
 
+/* Support AVIF compression */
+#cmakedefine AVIF_SUPPORT 1
+
 /* Support ZSTD compression */
 #cmakedefine ZSTD_SUPPORT 1
 

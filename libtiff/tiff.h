@@ -216,6 +216,7 @@ typedef enum
 #define COMPRESSION_ZSTD 50000             /* ZSTD: WARNING not registered in Adobe-maintained registry */
 #define COMPRESSION_WEBP 50001             /* WEBP: WARNING not registered in Adobe-maintained registry */
 #define COMPRESSION_JXL 50002              /* JPEGXL: WARNING not registered in Adobe-maintained registry */
+#define COMPRESSION_AVIF 50003             /* AVIF (AV1): WARNING not registered in Adobe-maintained registry. Experimental, implemented via libavif */
 #define COMPRESSION_JXL_DNG_1_7 52546      /* JPEGXL from DNG 1.7 specification */
 #define TIFFTAG_PHOTOMETRIC 262            /* photometric interpretation */
 #define PHOTOMETRIC_MINISWHITE 0           /* min value is white */
@@ -766,6 +767,13 @@ typedef enum
 #define TIFFTAG_DEFLATE_SUBCODEC 65570 /* ZIP codec: to get/set the sub-codec to use. Will default to libdeflate when available */
 #define DEFLATE_SUBCODEC_ZLIB 0
 #define DEFLATE_SUBCODEC_LIBDEFLATE 1
+#define TIFFTAG_AVIF_QUALITY 65572     /* AVIF lossy quality for color planes, 0 (worst) to 100 (best/lossless) */
+#define TIFFTAG_AVIF_LOSSLESS 65573    /* AVIF lossless/lossy mode pseudo tag */
+#define TIFFTAG_AVIF_SPEED 65574       /* AVIF encoder speed, 0 (slowest) to 10 (fastest) */
+#define TIFFTAG_AVIF_SUBSAMPLING 65575 /* AVIF chroma subsampling: 0=4:4:4, 1=4:2:2, 2=4:2:0 */
+#define AVIF_SUBSAMPLING_444 0
+#define AVIF_SUBSAMPLING_422 1
+#define AVIF_SUBSAMPLING_420 2
 
 /*
  * EXIF tags

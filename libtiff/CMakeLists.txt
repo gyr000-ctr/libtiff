@@ -55,6 +55,7 @@ add_library(TIFF::tiff ALIAS tiff)
 target_sources(tiff PRIVATE
         ${tiff_public_HEADERS}
         ${tiff_private_HEADERS}
+        tif_avif.c
         tif_aux.c
         tif_close.c
         tif_codec.c
@@ -181,6 +182,10 @@ endif()
 if(WEBP_SUPPORT)
   target_link_libraries(tiff PRIVATE WebP::webp)
   string(APPEND tiff_requires_private " libwebp")
+endif()
+if(AVIF_SUPPORT)
+  target_link_libraries(tiff PRIVATE AVIF::avif)
+  string(APPEND tiff_requires_private " libavif")
 endif()
 if(CMath_LIBRARY)
   target_link_libraries(tiff PRIVATE ${CMath_LIBRARIES})

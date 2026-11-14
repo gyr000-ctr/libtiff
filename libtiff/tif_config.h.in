@@ -133,6 +133,9 @@
 /* Support webp compression */
 #undef WEBP_SUPPORT
 
+/* Support AVIF compression */
+#undef AVIF_SUPPORT
+
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
 #if defined AC_APPLE_UNIVERSAL_BUILD

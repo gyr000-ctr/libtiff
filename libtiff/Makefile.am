@@ -58,6 +58,7 @@ nodist_libtiffinclude_HEADERS = \
 	tiffconf.h
 
 libtiff_la_SOURCES = \
+	tif_avif.c \
 	tif_aux.c \
 	tif_close.c \
 	tif_codec.c \
