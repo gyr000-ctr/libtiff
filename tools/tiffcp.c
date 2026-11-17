@@ -842,6 +842,459 @@ static const struct cpTag
 
 #define CopyTag(tag, count, type) cpTag(in, out, tag, count, type)
 
+/*
+ * Metadata preservation (EXIF / GPS private directories and binary
+ * metadata tags such as XMP, Photoshop and IPTC).
+ *
+ * The classic tag list above only covers baseline and extended image
+ * tags.  The helpers below additionally copy:
+ *  - well-known binary metadata tags of the image directory (XMP,
+ *    Photoshop image resources, IPTC) as opaque byte strings;
+ *  - the EXIF and GPS private directories referenced through the
+ *    EXIFIFD (34665) and GPSIFD (34853) pointer tags, rewritten as
+ *    real sub-directories of the output file;
+ *  - tags of unrecognized type, which are moved as raw bytes.
+ *
+ * Three error conditions are reported with distinct messages:
+ *  - "directory conflict": the output directory already carries an
+ *    EXIF/GPS pointer tag, both pointer tags reference the same
+ *    directory, or a nested directory pointer is found inside a
+ *    private directory (its file offsets cannot be relocated);
+ *  - "exceeds the 64 KB limit": a single copied tag is too large;
+ *  - "cannot write": any failure while writing to the output file.
+ */
+
+/* Upper bound for a single metadata tag copied as raw bytes. */
+#define TIFFCP_MAX_METADATA_TAG_BYTES ((uint64_t)64 * 1024)
+
+/* Binary metadata tags of the image directory copied as raw bytes. */
+static const uint16_t metadataTags[] = {
+    TIFFTAG_XMLPACKET,    /* 700: Adobe XMP */
+    TIFFTAG_RICHTIFFIPTC, /* 33723: IPTC (RichTIFF) */
+    TIFFTAG_PHOTOSHOP,    /* 34377: Photoshop image resources */
+};
+#define NMETADATATAGS (sizeof(metadataTags) / sizeof(metadataTags[0]))
+
+/*
+ * Copy one binary metadata tag of the image directory as raw bytes.
+ * Returns 1 on success (also when the tag is not present), 0 on error.
+ */
+static int cpBinaryMetadataTag(TIFF *in, TIFF *out, uint16_t tag)
+{
+    uint32_t count = 0;
+    void *data = NULL;
+
+    if (!TIFFGetField(in, tag, &count, &data))
+        return 1; /* tag not present: nothing to do */
+    if ((uint64_t)count > TIFFCP_MAX_METADATA_TAG_BYTES)
+    {
+        fprintf(stderr,
+                "tiffcp: %s: metadata tag %" PRIu16 " is %" PRIu32
+                " bytes, which exceeds the 64 KB limit\n",
+                TIFFFileName(in), tag, count);
+        return 0;
+    }
+    if (!TIFFSetField(out, tag, count, data))
+    {
+        fprintf(stderr,
+                "tiffcp: cannot write metadata tag %" PRIu16 " of %s to %s\n",
+                tag, TIFFFileName(in), TIFFFileName(out));
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * Enforce the 64 KB limit for a tag copied as raw bytes.
+ * Returns 1 if the tag is small enough, 0 otherwise.
+ */
+static int checkMetadataTagSize(TIFF *in, const TIFFField *fip, uint64_t count)
+{
+    int width = TIFFDataWidth(fip->field_type);
+    uint64_t bytes;
+
+    if (width <= 0)
+        width = 1;
+    bytes = count * (uint64_t)width;
+    if (bytes > TIFFCP_MAX_METADATA_TAG_BYTES)
+    {
+        fprintf(stderr,
+                "tiffcp: %s: tag %" PRIu32 " (%s) is %" PRIu64
+                " bytes, which exceeds the 64 KB limit\n",
+                TIFFFileName(in), fip->field_tag, fip->field_name, bytes);
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * Copy a single tag of the currently selected private (custom)
+ * directory of "in" to the currently selected private directory of
+ * "out".  Tags of unrecognized type are moved as raw bytes.
+ * Returns 1 on success, 0 on error.
+ */
+static int cpCustomDirTag(TIFF *in, TIFF *out, const TIFFField *fip,
+                          const char *dirName)
+{
+    uint32_t tag = fip->field_tag;
+    int ok = 0;
+
+    /*
+     * Nested directory pointers reference offsets within the input
+     * file and cannot be relocated by a straight copy.
+     */
+    if (fip->field_subfields != NULL || tag == TIFFTAG_SUBIFD ||
+        tag == TIFFTAG_EXIFIFD || tag == TIFFTAG_GPSIFD ||
+        tag == TIFFTAG_INTEROPERABILITYIFD || fip->field_type == TIFF_IFD ||
+        fip->field_type == TIFF_IFD8)
+    {
+        fprintf(stderr,
+                "tiffcp: directory conflict: %s directory of %s contains "
+                "nested directory tag %" PRIu32
+                " (%s), which cannot be copied\n",
+                dirName, TIFFFileName(in), tag, fip->field_name);
+        return 0;
+    }
+
+    /*
+     * Register unknown tags in the output file so that they are
+     * carried over as raw bytes.
+     */
+    if (TIFFFieldWithTag(out, tag) == NULL)
+    {
+        TIFFField *fld = _TIFFCreateAnonField(out, tag, fip->field_type);
+        if (fld == NULL || !_TIFFMergeFields(out, fld, 1))
+        {
+            fprintf(stderr,
+                    "tiffcp: cannot write %s directory to %s: registration "
+                    "of tag %" PRIu32 " failed\n",
+                    dirName, TIFFFileName(out), tag);
+            return 0;
+        }
+    }
+
+    if (fip->field_passcount)
+    {
+        /* Variable length tag: copied as raw bytes. */
+        if (fip->field_readcount == TIFF_VARIABLE2)
+        {
+            uint32_t n = 0;
+            void *d = NULL;
+            if (!TIFFGetField(in, tag, &n, &d))
+                goto readerr;
+            if (!checkMetadataTagSize(in, fip, n))
+                return 0;
+            ok = TIFFSetField(out, tag, n, d);
+        }
+        else
+        {
+            uint16_t n = 0;
+            void *d = NULL;
+            if (!TIFFGetField(in, tag, &n, &d))
+                goto readerr;
+            if (!checkMetadataTagSize(in, fip, n))
+                return 0;
+            ok = TIFFSetField(out, tag, n, d);
+        }
+    }
+    else if (fip->field_type == TIFF_ASCII)
+    {
+        char *s = NULL;
+        if (!TIFFGetField(in, tag, &s))
+            goto readerr;
+        if (!checkMetadataTagSize(in, fip, s ? strlen(s) + 1 : 0))
+            return 0;
+        ok = TIFFSetField(out, tag, s);
+    }
+    else if (fip->field_readcount == 1)
+    {
+        /* Single value tag. */
+        switch (fip->field_type)
+        {
+            case TIFF_BYTE:
+            case TIFF_UNDEFINED:
+            {
+                uint8_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_SBYTE:
+            {
+                int8_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_SHORT:
+            {
+                uint16_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_SSHORT:
+            {
+                int16_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_LONG:
+            {
+                uint32_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_SLONG:
+            {
+                int32_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_LONG8:
+            {
+                uint64_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_SLONG8:
+            {
+                int64_t v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_RATIONAL:
+            case TIFF_SRATIONAL:
+                if (TIFFFieldSetGetSize(fip) == 8)
+                {
+                    double v = 0;
+                    if (!TIFFGetField(in, tag, &v))
+                        goto readerr;
+                    ok = TIFFSetField(out, tag, v);
+                }
+                else
+                {
+                    float v = 0;
+                    if (!TIFFGetField(in, tag, &v))
+                        goto readerr;
+                    ok = TIFFSetField(out, tag, (double)v);
+                }
+                break;
+            case TIFF_FLOAT:
+            {
+                float v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, (double)v);
+            }
+            break;
+            case TIFF_DOUBLE:
+            {
+                double v = 0;
+                if (!TIFFGetField(in, tag, &v))
+                    goto readerr;
+                ok = TIFFSetField(out, tag, v);
+            }
+            break;
+            case TIFF_NOTYPE:
+            default:
+                fprintf(stderr,
+                        "tiffcp: cannot read tag %" PRIu32
+                        " (%s) of %s directory of %s: data type %u is not "
+                        "supported\n",
+                        tag, fip->field_name, dirName, TIFFFileName(in),
+                        (unsigned)fip->field_type);
+                return 0;
+        }
+    }
+    else
+    {
+        /* Fixed length array tag: copied as raw bytes. */
+        void *d = NULL;
+        if (!TIFFGetField(in, tag, &d))
+            goto readerr;
+        if (!checkMetadataTagSize(in, fip, (uint64_t)fip->field_readcount))
+            return 0;
+        ok = TIFFSetField(out, tag, d);
+    }
+
+    if (!ok)
+    {
+        fprintf(stderr,
+                "tiffcp: cannot write tag %" PRIu32
+                " (%s) of %s directory to %s\n",
+                tag, fip->field_name, dirName, TIFFFileName(out));
+        return 0;
+    }
+    return 1;
+
+readerr:
+    fprintf(stderr,
+            "tiffcp: cannot read tag %" PRIu32 " (%s) of %s directory of %s\n",
+            tag, fip->field_name, dirName, TIFFFileName(in));
+    return 0;
+}
+
+/*
+ * Copy all tags of the currently selected private directory of "in"
+ * to the currently selected private directory of "out".
+ * Returns 1 on success, 0 on error.
+ */
+static int cpCustomDirTags(TIFF *in, TIFF *out, const char *dirName)
+{
+    int tagcount = TIFFGetTagListCount(in);
+    int i;
+
+    for (i = 0; i < tagcount; i++)
+    {
+        uint32_t tag = TIFFGetTagListEntry(in, i);
+        const TIFFField *fip;
+
+        if (tag == (uint32_t)-1)
+            continue;
+        fip = TIFFFieldWithTag(in, tag);
+        if (fip == NULL)
+            continue;
+        if (!cpCustomDirTag(in, out, fip, dirName))
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * Copy one private directory (EXIF or GPS): read it from the input
+ * file, recreate it in the output file and copy all its tags.
+ * The offset of the freshly written directory is returned in
+ * *outOffset.  Returns 1 on success, 0 on error.
+ */
+static int cpPrivateDirectory(TIFF *in, TIFF *out, uint16_t pointerTag,
+                              uint64_t inOffset, const char *dirName,
+                              uint64_t *outOffset)
+{
+    int readOK, createOK;
+
+    if (pointerTag == TIFFTAG_EXIFIFD)
+    {
+        readOK = TIFFReadEXIFDirectory(in, inOffset);
+        createOK = readOK && (TIFFCreateEXIFDirectory(out) == 0);
+    }
+    else
+    {
+        readOK = TIFFReadGPSDirectory(in, inOffset);
+        createOK = readOK && (TIFFCreateGPSDirectory(out) == 0);
+    }
+    if (!readOK)
+    {
+        fprintf(stderr,
+                "tiffcp: cannot read %s directory at offset %" PRIu64
+                " of %s\n",
+                dirName, inOffset, TIFFFileName(in));
+        return 0;
+    }
+    if (!createOK)
+    {
+        fprintf(stderr,
+                "tiffcp: cannot write %s directory to %s: directory "
+                "creation failed\n",
+                dirName, TIFFFileName(out));
+        return 0;
+    }
+    if (!cpCustomDirTags(in, out, dirName))
+        return 0;
+    if (!TIFFWriteCustomDirectory(out, outOffset))
+    {
+        fprintf(stderr, "tiffcp: cannot write %s directory to %s\n", dirName,
+                TIFFFileName(out));
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * Copy the EXIF / GPS private directories of the current input image
+ * to the output file and record their offsets in the output image
+ * directory.  Must be called after the image data has been written,
+ * because the pending output directory has to be written before
+ * custom directories can be appended.  The output image directory is
+ * rewritten in place by the TIFFWriteDirectory() call in main().
+ * Returns 1 on success, 0 on error.
+ */
+static int cpExifGpsDirectories(TIFF *in, TIFF *out, int copyEXIF,
+                                uint64_t exifOffset, int copyGPS,
+                                uint64_t gpsOffset)
+{
+    tdir_t inImageDir = TIFFCurrentDirectory(in);
+    tdir_t outImageDir;
+    uint64_t outExifOffset = 0;
+    uint64_t outGpsOffset = 0;
+
+    /*
+     * Flush pending image data and write the output image directory,
+     * so that the private directories can be appended to the file and
+     * the image directory selected again afterwards.  A full
+     * TIFFWriteDirectory() (rather than TIFFCheckpointDirectory()) is
+     * required here: it finalizes the encoder and clears the writing
+     * state, which allows the directory to be re-read below.  The
+     * directory is rewritten in place by the TIFFWriteDirectory()
+     * call in main().
+     */
+    if (!TIFFWriteDirectory(out))
+    {
+        fprintf(stderr,
+                "tiffcp: cannot write image directory of %s to %s\n",
+                TIFFFileName(in), TIFFFileName(out));
+        return 0;
+    }
+    /* The directory number is only assigned once it has been linked. */
+    outImageDir = TIFFCurrentDirectory(out);
+    if (copyEXIF && !cpPrivateDirectory(in, out, TIFFTAG_EXIFIFD, exifOffset,
+                                        "EXIF", &outExifOffset))
+        return 0;
+    if (copyGPS && !cpPrivateDirectory(in, out, TIFFTAG_GPSIFD, gpsOffset,
+                                       "GPS", &outGpsOffset))
+        return 0;
+    /*
+     * Re-select the image directories and record the offsets of the
+     * freshly written private directories in the output image
+     * directory.
+     */
+    if (!TIFFSetDirectory(in, inImageDir) ||
+        !TIFFSetDirectory(out, outImageDir))
+    {
+        fprintf(stderr,
+                "tiffcp: cannot write private directories to %s: failed to "
+                "re-select image directory\n",
+                TIFFFileName(out));
+        return 0;
+    }
+    if (copyEXIF && !TIFFSetField(out, TIFFTAG_EXIFIFD, outExifOffset))
+    {
+        fprintf(stderr, "tiffcp: cannot write EXIFIFD tag to %s\n",
+                TIFFFileName(out));
+        return 0;
+    }
+    if (copyGPS && !TIFFSetField(out, TIFFTAG_GPSIFD, outGpsOffset))
+    {
+        fprintf(stderr, "tiffcp: cannot write GPSIFD tag to %s\n",
+                TIFFFileName(out));
+        return 0;
+    }
+    return 1;
+}
+
 typedef int (*copyFunc)(TIFF *in, TIFF *out, uint32_t l, uint32_t w,
                         uint16_t samplesperpixel);
 static copyFunc pickCopyFunc(TIFF *, TIFF *, uint16_t, uint16_t);
@@ -855,6 +1308,9 @@ static int tiffcp(TIFF *in, TIFF *out)
     copyFunc cf;
     uint32_t width, length;
     const struct cpTag *p;
+    int i;
+    int copyEXIF, copyGPS;
+    uint64_t exifOffset = 0, gpsOffset = 0;
 
     CopyField(TIFFTAG_IMAGEWIDTH, width);
     CopyField(TIFFTAG_IMAGELENGTH, length);
@@ -1189,8 +1645,75 @@ static int tiffcp(TIFF *in, TIFF *out)
         CopyTag(p->tag, p->count, p->type);
     }
 
+    /*
+     * Copy well-known binary metadata tags (XMP, Photoshop image
+     * resources, IPTC) as opaque byte strings.
+     */
+    for (i = 0; i < (int)NMETADATATAGS; i++)
+    {
+        if (!cpBinaryMetadataTag(in, out, metadataTags[i]))
+            return FALSE;
+    }
+    /*
+     * Detect EXIF / GPS private directories and reserve their pointer
+     * tags in the output directory.  The final directory offsets are
+     * patched in once the private directories have been written.
+     * An offset of 0 is an unset placeholder left by other writers
+     * and is treated as "no directory".
+     */
+    copyEXIF =
+        TIFFGetField(in, TIFFTAG_EXIFIFD, &exifOffset) != 0 && exifOffset != 0;
+    copyGPS =
+        TIFFGetField(in, TIFFTAG_GPSIFD, &gpsOffset) != 0 && gpsOffset != 0;
+    if (copyEXIF && copyGPS && exifOffset == gpsOffset)
+    {
+        fprintf(stderr,
+                "tiffcp: directory conflict: %s: EXIFIFD and GPSIFD tags "
+                "point to the same directory (offset %" PRIu64 ")\n",
+                TIFFFileName(in), exifOffset);
+        return FALSE;
+    }
+    if (copyEXIF)
+    {
+        uint64_t previous;
+        if (TIFFGetField(out, TIFFTAG_EXIFIFD, &previous))
+        {
+            fprintf(stderr,
+                    "tiffcp: directory conflict: output directory of %s "
+                    "already has an EXIFIFD tag\n",
+                    TIFFFileName(out));
+            return FALSE;
+        }
+        TIFFSetField(out, TIFFTAG_EXIFIFD, (uint64_t)0);
+    }
+    if (copyGPS)
+    {
+        uint64_t previous;
+        if (TIFFGetField(out, TIFFTAG_GPSIFD, &previous))
+        {
+            fprintf(stderr,
+                    "tiffcp: directory conflict: output directory of %s "
+                    "already has a GPSIFD tag\n",
+                    TIFFFileName(out));
+            return FALSE;
+        }
+        TIFFSetField(out, TIFFTAG_GPSIFD, (uint64_t)0);
+    }
+
     cf = pickCopyFunc(in, out, bitspersample, samplesperpixel);
-    return (cf ? (*cf)(in, out, length, width, samplesperpixel) : FALSE);
+    if (cf == NULL || !(*cf)(in, out, length, width, samplesperpixel))
+        return FALSE;
+    /*
+     * Copy the EXIF / GPS private directories, if any.  This must
+     * happen after the image data has been written, because the
+     * pending output directory has to be checkpointed before custom
+     * directories can be appended.
+     */
+    if ((copyEXIF || copyGPS) &&
+        !cpExifGpsDirectories(in, out, copyEXIF, exifOffset, copyGPS,
+                              gpsOffset))
+        return FALSE;
+    return TRUE;
 }
 
 /*

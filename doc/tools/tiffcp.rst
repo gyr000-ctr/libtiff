@@ -19,6 +19,17 @@ used to convert between different compression schemes.
 By default, :program:`tiffcp` will copy all the understood tags in a
 TIFF directory of an input file to the associated directory in the output file.
 
+In addition, :program:`tiffcp` preserves the EXIF and GPS private
+directories referenced by the ``EXIFIFD`` (34665) and ``GPSIFD`` (34853)
+tags, recreating them as sub-directories of the output file, as well as
+the binary metadata tags ``XMLPacket`` (700, XMP), ``RichTIFFIPTC``
+(33723) and ``Photoshop`` (34377), which are copied as opaque byte
+strings.  Tags of unrecognized type found inside the private
+directories are carried over as raw bytes.  Copying fails with a
+distinct error message when a directory conflict is detected (for
+example a nested directory pointer), when a single metadata tag
+exceeds 64 KB, or when the output file cannot be written.
+
 :program:`tiffcp` can be used to reorganize the storage characteristics of data
 in a file, but it is explicitly intended to not alter or convert
 the image data content in any way.
